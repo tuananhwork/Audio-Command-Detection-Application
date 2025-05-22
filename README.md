@@ -1,160 +1,118 @@
-# Audio Command Detector
+# Audio Command Detection
 
-Ứng dụng nhận diện lệnh thoại sử dụng React và FastAPI.
+Ứng dụng nhận diện lệnh thoại sử dụng deep learning.
 
-## Pipeline Tổng Quan
+## Pipeline
 
-### 1. Frontend (React + Vite)
+### Frontend (React)
 
-#### A. Cấu trúc UI
+1. **Ghi âm**
 
-- Giao diện chính với các thành phần:
-  - Nút ghi âm (3 giây)
-  - Input upload file audio
-  - Audio player để nghe lại
-  - Nút gửi lên server
-  - Khu vực hiển thị kết quả dự đoán
+   - Sử dụng Web Audio API (AudioWorkletNode) để ghi âm
+   - Ghi âm trong 3 giây với sample rate 16kHz
+   - Chuyển đổi audio data thành WAV format
 
-#### B. Pipeline xử lý âm thanh
+2. **Hiển thị**
+   - Sử dụng WaveSurfer.js để hiển thị waveform
+   - Hiển thị kết quả dự đoán với màu sắc tương ứng:
+     - Xanh lá: confidence >= 80%
+     - Vàng: confidence >= 60%
+     - Đỏ: confidence < 60%
 
-1. **Ghi âm:**
+### Backend (FastAPI)
 
-   ```javascript
-   - Khởi tạo AudioContext với sampleRate 16kHz
-   - Lấy stream từ microphone với cấu hình:
-     + channelCount: 1 (mono)
-     + sampleRate: 16kHz
-     + sampleSize: 16-bit
-   - Sử dụng ScriptProcessor để xử lý audio data
-   - Ghi âm chính xác 3 giây
-   ```
+1. **Xử lý Audio**
 
-2. **Xử lý audio data:**
+   - Nhận file WAV từ frontend
+   - Tiền xử lý audio (normalize, resample)
 
-   ```javascript
-   - Thu thập audio chunks
-   - Kết hợp các chunks thành Float32Array
-   - Chuyển đổi sang WAV format với:
-     + RIFF header
-     + PCM format
-     + Mono channel
-     + 16kHz sample rate
-     + 16-bit depth
-   ```
+2. **Dự đoán**
+   - Sử dụng model deep learning để dự đoán lệnh
+   - Trả về top 3 dự đoán với confidence
 
-3. **Upload lên server:**
-   ```javascript
-   - Tạo FormData với audio file
-   - Gửi POST request đến endpoint /predict
-   - Xử lý response và hiển thị kết quả
-   ```
+## Luồng xử lý dữ liệu chi tiết
 
-### 2. Backend (FastAPI + Python)
+### 1. Thu âm (Frontend)
 
-#### A. API Endpoints
+```javascript
+// 1. Khởi tạo AudioContext
+const audioContext = new AudioContext({ sampleRate: 16000 });
+
+// 2. Lấy stream từ microphone
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    channelCount: 1, // Mono
+    sampleRate: 16000,
+    sampleSize: 16,
+  },
+});
+
+// 3. Xử lý audio qua AudioWorklet
+const workletNode = new AudioWorkletNode(audioContext, 'audio-recorder');
+workletNode.port.onmessage = (e) => {
+  // Thu thập audio chunks
+  chunks.push(e.data);
+};
+```
+
+### 2. Chuyển đổi và gửi dữ liệu
+
+```javascript
+// 1. Kết hợp audio chunks
+const audioData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+
+// 2. Chuyển đổi sang WAV format
+const wavBlob = convertToWav(audioData); // RIFF header + PCM data
+
+// 3. Gửi lên server
+const formData = new FormData();
+formData.append('audio_file', wavBlob, 'audio.wav');
+const response = await axios.post('http://localhost:8000/predict', formData);
+```
+
+### 3. Xử lý server (Backend)
 
 ```python
-- POST /predict
-  + Input: audio file (WAV format)
-  + Output: JSON với kết quả dự đoán
+# 1. Nhận và kiểm tra file
+@app.post("/predict")
+async def predict(audio_file: UploadFile):
+    # Kiểm tra độ dài tối thiểu (1.5s)
+    if file_size < 16000 * 2 * 1.5:
+        raise ValueError("File quá ngắn")
+
+# 2. Tiền xử lý audio
+audio, sr = librosa.load(audio_path, sr=16000)
+audio = librosa.util.normalize(audio)
+
+# 3. Dự đoán với model
+predictions = model.predict(audio)
 ```
 
-#### B. Pipeline xử lý âm thanh
+### 4. Phản hồi và hiển thị
 
-1. **Tiền xử lý audio:**
+```javascript
+// 1. Nhận kết quả từ server
+const result = {
+  predicted_class: 'command_name',
+  confidence: 0.95,
+  top3_predictions: [
+    ['command1', 0.95],
+    ['command2', 0.03],
+    ['command3', 0.02],
+  ],
+};
 
-   ```python
-   - Đọc file WAV
-   - Kiểm tra format (16kHz, mono, 16-bit)
-   - Tìm đoạn có năng lượng cao nhất trong 1.7s
-   - Cắt 0.2s từ đầu hoặc cuối
-   - Lấy đoạn 1s có năng lượng cao nhất
-   ```
+// 2. Hiển thị waveform
+wavesurfer.load(audioUrl);
 
-2. **Trích xuất đặc trưng:**
-
-   ```python
-   - Chuyển đổi sang mel spectrogram
-   - Chuẩn hóa dữ liệu
-   - Reshape để phù hợp với model
-   ```
-
-3. **Dự đoán:**
-   ```python
-   - Load model đã train
-   - Thực hiện dự đoán
-   - Trả về top 3 kết quả với độ tin cậy
-   ```
-
-### 3. Luồng dữ liệu tổng thể
-
-```
-[Frontend]
-1. User ghi âm 3s
-   ↓
-2. Chuyển đổi sang WAV
-   ↓
-3. Upload lên server
-   ↓
-[Backend]
-4. Tiền xử lý audio
-   ↓
-5. Trích xuất đặc trưng
-   ↓
-6. Dự đoán với model
-   ↓
-7. Trả về kết quả
-   ↓
-[Frontend]
-8. Hiển thị kết quả
-   - Lệnh dự đoán (highlighted)
-   - Độ tin cậy
-   - Top 3 dự đoán
+// 3. Hiển thị kết quả với màu sắc tương ứng
+<div className={`prediction__command ${getConfidenceClass(confidence)}`}>
+  {predicted_class}
+  <span className="prediction__confidence">{(confidence * 100).toFixed(2)}%</span>
+</div>;
 ```
 
-### 4. Các yêu cầu kỹ thuật
-
-#### A. Audio Format
-
-- Format: WAV
-- Channels: Mono (1)
-- Sample Rate: 16kHz
-- Bit Depth: 16-bit
-- Duration: 3 seconds
-
-#### B. API Communication
-
-- Method: POST
-- Content-Type: multipart/form-data
-- Endpoint: http://localhost:8000/predict
-- Response: JSON với status và data
-
-#### C. Error Handling
-
-- Frontend: Xử lý lỗi microphone, upload, và hiển thị thông báo
-- Backend: Xử lý lỗi format audio, xử lý dữ liệu, và dự đoán
-
-### 5. Cải tiến đã thực hiện
-
-1. **UI/UX:**
-
-   - Giao diện hiện đại với CSS
-   - Highlight kết quả dự đoán
-   - Hiển thị countdown khi ghi âm
-   - Cải thiện hiển thị Top 3 predictions
-
-2. **Audio Processing:**
-
-   - Ghi âm chính xác 3s
-   - Chuyển đổi WAV format chuẩn
-   - Tự động upload sau khi ghi âm
-
-3. **Error Handling:**
-   - Xử lý lỗi microphone
-   - Xử lý lỗi upload
-   - Hiển thị thông báo lỗi rõ ràng
-
-## Cài đặt và Chạy
+## Cài đặt
 
 ### Frontend
 
@@ -169,22 +127,32 @@ npm run dev
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn api.server:app --reload
+cd api
+python server.py
+```
+
+## Cấu trúc thư mục
+
+```
+.
+├── frontend/
+│   ├── public/
+│   │   └── audio-processor.js    # Audio worklet processor
+│   ├── src/
+│   │   ├── App.jsx              # Main React component
+│   │   └── App.css              # Styles
+│   └── package.json
+│
+└── backend/
+    ├── api/
+    │   └── server.py            # FastAPI server
+    ├── core/
+    │   └── audio_command_detector.py  # Model và xử lý audio
+    └── requirements.txt
 ```
 
 ## Công nghệ sử dụng
 
-### Frontend
-
-- React
-- Vite
-- Axios
-- Web Audio API
-
-### Backend
-
-- FastAPI
-- Python
-- NumPy
-- Librosa
-- TensorFlow/PyTorch (cho model)
+- Frontend: React, WaveSurfer.js, Web Audio API
+- Backend: FastAPI, TensorFlow
+- Audio Processing: librosa, soundfile
