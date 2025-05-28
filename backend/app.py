@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import tempfile
@@ -7,6 +7,7 @@ import shutil
 import logging
 import requests
 from audio_command_detector import AudioCommandDetector
+from pydantic import BaseModel
 
 # ESP32 IP CONFIG
 ESP32_IP = "10.42.0.120"
@@ -37,6 +38,8 @@ app.add_middleware(
 # Initialize detector
 detector = AudioCommandDetector()
 
+class CommandRequest(BaseModel):
+    command: str
 
 def send_command_to_esp32(command: str):
     """
@@ -46,13 +49,12 @@ def send_command_to_esp32(command: str):
         url = f"http://{ESP32_IP}/command"
         payload = {"cmd": command}
         res = requests.post(url, json=payload, timeout=3)
-
-        if res.status_code == 200:
-            logger.info(f"✅ Successfully sent command '{command}' to ESP32.")
-        else:
-            logger.warning(f"⚠️ ESP32 returned error {res.status_code}: {res.text}")
+        res.raise_for_status()  # Raise exception for bad status codes
+        logger.info(f"✅ Successfully sent command '{command}' to ESP32.")
+        return True
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Error sending command to ESP32: {e}")
+        raise  # Re-raise the exception to be handled by the caller
 
 
 @app.get("/")
@@ -79,11 +81,27 @@ async def predict(audio_file: UploadFile = File(...)):
 
         logger.info(f"🎧 Prediction: {predicted_class} (confidence: {confidence:.2f})")
 
-        # Only send if model is confident
-        if confidence >= 0.85:
-            send_command_to_esp32(predicted_class)
+        # Gửi lệnh đến ESP32 nếu độ tin cậy cao và không phải unknown
+        command_status = "not_sent"
+        command_error = None
+        command_reason = None
+        if predicted_class == "unknown":
+            command_status = "not_sent"
+            command_reason = "Command not recognized"
+            logger.warning("⚠️ Unknown command detected, not sending to ESP32")
+        elif confidence < 0.8:
+            command_status = "not_sent" 
+            command_reason = f"Low confidence ({confidence:.2f})"
+            logger.warning(f"⚠️ Low confidence ({confidence:.2f}), not sending command to ESP32")
         else:
-            logger.warning("🤔 Low confidence, not sending command to ESP32.")
+            try:
+                send_command_to_esp32(predicted_class)
+                command_status = "sent"
+                logger.info(f"✅ Command '{predicted_class}' sent to ESP32")
+            except Exception as e:
+                command_status = "error"
+                command_error = str(e)
+                logger.error(f"❌ Error sending command to ESP32: {e}")
 
         return {
             "status": "success",
@@ -91,7 +109,10 @@ async def predict(audio_file: UploadFile = File(...)):
                 "predicted_class": predicted_class,
                 "confidence": confidence,
                 "top3_predictions": result["data"]["top3_predictions"],
-                "waveform": result["data"]["waveform"]
+                "waveform": result["data"]["waveform"],
+                "command_status": command_status,
+                "command_error": command_error,
+                "command_reason": command_reason
             }
         }
 
@@ -102,6 +123,16 @@ async def predict(audio_file: UploadFile = File(...)):
     finally:
         if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
             os.unlink(temp_file_path)
+
+
+@app.post("/send-command")
+async def send_command(command_request: CommandRequest):
+    try:
+        send_command_to_esp32(command_request.command)
+        return {"status": "success", "message": f"Command '{command_request.command}' sent successfully"}
+    except Exception as e:
+        logger.error(f"❌ Error sending command: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

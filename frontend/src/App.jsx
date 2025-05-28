@@ -17,6 +17,7 @@ const commandMapping = {
   tat_dieu_hoa: 'Tắt điều hòa',
   tat_quat: 'Tắt quạt',
   tat_tv: 'Tắt TV',
+  unknown: 'Unknown',
 };
 
 // Audio recording utilities
@@ -222,7 +223,7 @@ function App() {
     } catch (err) {
       console.error('Error accessing microphone:', err);
       setRecording(false);
-      setResult({ status: 'error', message: 'Không thể truy cập microphone' });
+      setResult({ status: 'error', message: 'Cannot access microphone' });
     }
   };
 
@@ -259,17 +260,19 @@ function App() {
     const formData = new FormData();
     formData.append('audio_file', blob, 'audio.wav');
     try {
+      // Gửi file âm thanh để dự đoán và gửi lệnh
       const res = await axios.post('http://localhost:8000/predict', formData, {
-        // headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 30000,
       });
+      console.log('✅ Received result from server:', res.data);
       setResult(res.data);
     } catch (err) {
-      let errorMessage = 'Có lỗi xảy ra khi xử lý âm thanh';
+      console.error('❌ Error processing audio:', err);
+      let errorMessage = 'An error occurred while processing audio';
       if (err.code === 'ERR_NETWORK') {
-        errorMessage = 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối hoặc thử lại sau.';
+        errorMessage = 'Cannot connect to server. Please check your connection or try again later.';
       } else if (err.response) {
-        errorMessage = `Lỗi từ máy chủ: ${err.response.data?.message || err.message}`;
+        errorMessage = err.response.data?.detail || err.response.data?.message || err.message;
       }
       setResult({
         status: 'error',
@@ -278,6 +281,8 @@ function App() {
           predicted_class: 'error',
           confidence: 0,
           top3_predictions: [],
+          command_status: 'error',
+          command_error: errorMessage,
         },
       });
     }
@@ -288,6 +293,27 @@ function App() {
     if (confidence >= 0.8) return 'confidence--high';
     if (confidence >= 0.6) return 'confidence--medium';
     return 'confidence--low';
+  };
+
+  // Thêm hàm để xác định class cho prediction command
+  const getPredictionClass = (predictedClass, confidence) => {
+    if (predictedClass === 'unknown') return 'prediction__command--unknown';
+    return getConfidenceClass(confidence);
+  };
+
+  // Thêm hàm để hiển thị trạng thái gửi lệnh
+  const getCommandStatusText = (result) => {
+    if (!result?.data?.command_status) return null;
+    switch (result.data.command_status) {
+      case 'sent':
+        return '✅ Command sent successfully';
+      case 'error':
+        return `❌ Error: ${result.data.command_error || 'Unable to send command to ESP32'}`;
+      case 'not_sent':
+        return `⚠️ ${result.data.command_reason || 'Command not sent'}`;
+      default:
+        return null;
+    }
   };
 
   return (
@@ -309,8 +335,8 @@ function App() {
           onClick={recording ? stopRecording : startRecording}
           disabled={loading || recording}
         >
-          {recording ? `Đang ghi... (${countdown}s)` : 'Ghi âm (3s)'}
-          {showKeyboardHint && !recording && <span className="keyboard-hint">Nhấn Space để ghi âm</span>}
+          {recording ? `Recording... (${countdown}s)` : 'Record (3s)'}
+          {showKeyboardHint && !recording && <span className="keyboard-hint">Press Space to record</span>}
         </button>
 
         {audioUrl && (
@@ -328,17 +354,34 @@ function App() {
         {result && (
           <>
             <div className="results__section">
-              <h2 className="results__title">Lệnh dự đoán</h2>
+              <h2 className="results__title">Predicted Command</h2>
               <div className="prediction">
-                <div className={`prediction__command ${getConfidenceClass(result.data.confidence)} animate-in`}>
-                  {commandMapping[result.data.predicted_class] || result.data.predicted_class}
+                <div
+                  className={`prediction__command ${getPredictionClass(
+                    result.data.predicted_class,
+                    result.data.confidence
+                  )} animate-in`}
+                >
+                  {result.data.predicted_class === 'unknown' ? (
+                    <>
+                      <span className="unknown-icon">❓</span>
+                      {commandMapping[result.data.predicted_class]}
+                    </>
+                  ) : (
+                    commandMapping[result.data.predicted_class] || result.data.predicted_class
+                  )}
                   <span className="prediction__confidence">{(result.data.confidence * 100).toFixed(2)}%</span>
                 </div>
+                {getCommandStatusText(result) && (
+                  <div className={`prediction__status ${result.data.command_status}`}>
+                    {getCommandStatusText(result)}
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="results__section">
-              <h2 className="results__title">Top 3 dự đoán</h2>
+              <h2 className="results__title">Top 3 Predictions</h2>
               <ul className="top-predictions">
                 {result.data.top3_predictions.map(([command, confidence], index) => (
                   <li
@@ -356,14 +399,16 @@ function App() {
         )}
 
         <div className="results__section">
-          <h2 className="results__title">Danh sách lệnh hỗ trợ</h2>
+          <h2 className="results__title">Supported Commands</h2>
           <div className="command-list">
-            {Object.entries(commandMapping).map(([key, command], index) => (
-              <div key={key} className="command-item animate-in" style={{ animationDelay: `${index * 0.05}s` }}>
-                <span className="command-number">{index + 1}.</span>
-                <span className="command-text">{command}</span>
-              </div>
-            ))}
+            {Object.entries(commandMapping)
+              .filter(([key]) => key !== 'unknown')
+              .map(([key, command], index) => (
+                <div key={key} className="command-item animate-in" style={{ animationDelay: `${index * 0.05}s` }}>
+                  <span className="command-number">{index + 1}.</span>
+                  <span className="command-text">{command}</span>
+                </div>
+              ))}
           </div>
         </div>
       </div>
@@ -371,7 +416,7 @@ function App() {
       {loading && (
         <div className="loading-container animate-in">
           <div className="loading-spinner"></div>
-          <p>Đang xử lý...</p>
+          <p>Processing...</p>
         </div>
       )}
     </div>
