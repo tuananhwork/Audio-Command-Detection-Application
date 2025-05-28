@@ -3,6 +3,22 @@ import axios from 'axios';
 import WaveSurfer from 'wavesurfer.js';
 import './App.css';
 
+// Command mapping from no-diacritics to full Vietnamese
+const commandMapping = {
+  bat_den: 'Bật đèn',
+  bat_dieu_hoa: 'Bật điều hòa',
+  bat_quat: 'Bật quạt',
+  bat_tv: 'Bật TV',
+  do_am: 'Độ ẩm',
+  dong_rem: 'Đóng rèm',
+  mo_rem: 'Mở rèm',
+  nhiet_do: 'Nhiệt độ',
+  tat_den: 'Tắt đèn',
+  tat_dieu_hoa: 'Tắt điều hòa',
+  tat_quat: 'Tắt quạt',
+  tat_tv: 'Tắt TV',
+};
+
 // Audio recording utilities
 const createAudioContext = () => {
   return new (window.AudioContext || window.webkitAudioContext)({
@@ -75,10 +91,40 @@ function App() {
   const mediaRecorderRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [showKeyboardHint, setShowKeyboardHint] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Thêm refs cho waveform
   const originalWaveformRef = useRef(null);
   const wavesurferRef = useRef(null);
+
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode);
+    document.body.classList.toggle('dark-mode');
+  };
+
+  // Keyboard event listener
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.code === 'Space' && !recording && !loading) {
+        e.preventDefault(); // Prevent page scroll
+        startRecording();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [recording, loading]);
+
+  // Hide keyboard hint after 5 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowKeyboardHint(false);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Khởi tạo WaveSurfer khi component mount
   useEffect(() => {
@@ -214,11 +260,26 @@ function App() {
     formData.append('audio_file', blob, 'audio.wav');
     try {
       const res = await axios.post('http://localhost:8000/predict', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        // headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 30000,
       });
       setResult(res.data);
     } catch (err) {
-      setResult({ status: 'error', message: err.message });
+      let errorMessage = 'Có lỗi xảy ra khi xử lý âm thanh';
+      if (err.code === 'ERR_NETWORK') {
+        errorMessage = 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối hoặc thử lại sau.';
+      } else if (err.response) {
+        errorMessage = `Lỗi từ máy chủ: ${err.response.data?.message || err.message}`;
+      }
+      setResult({
+        status: 'error',
+        message: errorMessage,
+        data: {
+          predicted_class: 'error',
+          confidence: 0,
+          top3_predictions: [],
+        },
+      });
     }
     setLoading(false);
   };
@@ -230,20 +291,30 @@ function App() {
   };
 
   return (
-    <div className="app">
-      <h1 className="app__title">Audio Command Detector</h1>
+    <div className={`app ${isDarkMode ? 'dark-mode' : ''}`}>
+      <div className="header">
+        <h1 className="app__title">Audio Command Detector</h1>
+        <button
+          className="theme-toggle"
+          onClick={toggleDarkMode}
+          aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDarkMode ? '☀️' : '🌙'}
+        </button>
+      </div>
 
       <div className="control-panel">
         <button
-          className={`btn btn--record ${loading ? 'disabled' : ''}`}
+          className={`btn btn--record ${loading ? 'disabled' : ''} ${recording ? 'recording' : ''}`}
           onClick={recording ? stopRecording : startRecording}
-          disabled={loading}
+          disabled={loading || recording}
         >
           {recording ? `Đang ghi... (${countdown}s)` : 'Ghi âm (3s)'}
+          {showKeyboardHint && !recording && <span className="keyboard-hint">Nhấn Space để ghi âm</span>}
         </button>
 
         {audioUrl && (
-          <div className="audio-container">
+          <div className="audio-container animate-in">
             <div className="visualization-section">
               <h3 className="visualization-title">Original Audio</h3>
               <div ref={originalWaveformRef} className="waveform" />
@@ -253,35 +324,54 @@ function App() {
         )}
       </div>
 
-      {result && (
-        <div className="results">
-          {result.status === 'success' ? (
-            <>
-              <div className="results__section">
-                <h2 className="results__title">Lệnh dự đoán</h2>
-                <div className="prediction">
-                  <div className={`prediction__command ${getConfidenceClass(result.data.confidence)}`}>
-                    {result.data.predicted_class}
-                    <span className="prediction__confidence">{(result.data.confidence * 100).toFixed(2)}%</span>
-                  </div>
+      <div className="results animate-in">
+        {result && (
+          <>
+            <div className="results__section">
+              <h2 className="results__title">Lệnh dự đoán</h2>
+              <div className="prediction">
+                <div className={`prediction__command ${getConfidenceClass(result.data.confidence)} animate-in`}>
+                  {commandMapping[result.data.predicted_class] || result.data.predicted_class}
+                  <span className="prediction__confidence">{(result.data.confidence * 100).toFixed(2)}%</span>
                 </div>
               </div>
+            </div>
 
-              <div className="results__section">
-                <h2 className="results__title">Top 3 dự đoán</h2>
-                <ul className="top-predictions">
-                  {result.data.top3_predictions.map(([command, confidence], index) => (
-                    <li key={index} className="top-predictions__item">
-                      <span className="top-predictions__command">{command}</span>
-                      <span className="top-predictions__confidence">{(confidence * 100).toFixed(2)}%</span>
-                    </li>
-                  ))}
-                </ul>
+            <div className="results__section">
+              <h2 className="results__title">Top 3 dự đoán</h2>
+              <ul className="top-predictions">
+                {result.data.top3_predictions.map(([command, confidence], index) => (
+                  <li
+                    key={index}
+                    className="top-predictions__item animate-in"
+                    style={{ animationDelay: `${index * 0.1}s` }}
+                  >
+                    <span className="top-predictions__command">{commandMapping[command] || command}</span>
+                    <span className="top-predictions__confidence">{(confidence * 100).toFixed(2)}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+
+        <div className="results__section">
+          <h2 className="results__title">Danh sách lệnh hỗ trợ</h2>
+          <div className="command-list">
+            {Object.entries(commandMapping).map(([key, command], index) => (
+              <div key={key} className="command-item animate-in" style={{ animationDelay: `${index * 0.05}s` }}>
+                <span className="command-number">{index + 1}.</span>
+                <span className="command-text">{command}</span>
               </div>
-            </>
-          ) : (
-            <div className="error">Lỗi: {result.message}</div>
-          )}
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="loading-container animate-in">
+          <div className="loading-spinner"></div>
+          <p>Đang xử lý...</p>
         </div>
       )}
     </div>
