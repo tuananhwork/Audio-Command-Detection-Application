@@ -107,18 +107,16 @@
   transition: all 0.3s ease;
 }
 
-.btn--record::after {
+.btn--record::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.5);
-  opacity: 0;
-  border-radius: 100%;
-  transform: scale(1, 1) translate(-50%);
-  transform-origin: 50% 50%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255, 0, 0, 0.3) 0%, rgba(255, 0, 0, 0.3) 100%);
+  transform: translateX(-100%);
+  transition: transform 0.1s linear;
 }
 
 .btn--record:focus:not(:active)::after {
@@ -168,6 +166,10 @@
   animation: pulse 1.5s infinite;
 }
 
+.btn--record.recording::before {
+  animation: progress 3s linear forwards;
+}
+
 @keyframes pulse {
   0% {
     transform: scale(1);
@@ -177,6 +179,15 @@
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(0);
   }
 }
 
@@ -415,11 +426,26 @@
 /* Error Message */
 .error {
   color: var(--error-color);
-  padding: 1rem;
+  padding: 1.5rem;
   background-color: color-mix(in srgb, var(--error-color) 10%, var(--bg-primary));
   border-radius: 8px;
-  text-align: center;
+  text-align: left;
   font-weight: 500;
+  line-height: 1.6;
+  white-space: pre-line;
+  border-left: 4px solid var(--error-color);
+  margin: 1rem 0;
+  box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+.error::before {
+  content: '⚠️';
+  margin-right: 0.5rem;
+  font-size: 1.2em;
+}
+
+.dark-mode .error {
+  background-color: color-mix(in srgb, var(--error-color) 15%, var(--bg-primary));
 }
 
 /* Loading Animation */
@@ -846,4 +872,44 @@ header h1 {
   .command-text {
     font-size: 1rem;
   }
+}
+
+.prediction__status {
+  width: 100%;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  font-weight: 500;
+  text-align: left;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.prediction__status.error {
+  background-color: color-mix(in srgb, var(--error-color) 10%, var(--bg-primary));
+  color: var(--error-color);
+  border-left: 4px solid var(--error-color);
+  box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+.prediction__status.error::before {
+  content: '⚠️';
+  margin-right: 0.5rem;
+  font-size: 1.2em;
+}
+
+.prediction__status.sent {
+  background-color: color-mix(in srgb, var(--success-color) 10%, var(--bg-primary));
+  color: var(--success-color);
+  border-left: 4px solid var(--success-color);
+}
+
+.prediction__status.not_sent {
+  background-color: color-mix(in srgb, var(--warning-color) 10%, var(--bg-primary));
+  color: var(--warning-color);
+  border-left: 4px solid var(--warning-color);
+}
+
+.dark-mode .prediction__status.error {
+  background-color: color-mix(in srgb, var(--error-color) 15%, var(--bg-primary));
 }
