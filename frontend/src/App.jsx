@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Header from './components/Header';
 import ControlPanel from './components/ControlPanel';
 import Results from './components/Results';
+import WakeWordListener from './components/WakeWordListener';
 import { AUDIO_CONFIG } from './constants/audio';
 import { createAudioContext, convertToWav } from './utils/audio';
 import './App.css';
@@ -202,9 +203,17 @@ function App() {
     setLoading(false);
   };
 
+  const handleWakeWordDetected = useCallback(() => {
+    if (!recording && !loading) {
+      console.log('Wake word detected! Starting recording...');
+      startRecording();
+    }
+  }, [recording, loading, startRecording]);
+
   return (
     <div className={`app ${isDarkMode ? 'dark-mode' : ''}`}>
       <Header isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+      <WakeWordListener onWakeWordDetected={handleWakeWordDetected} />
       <ControlPanel
         onRecord={recording ? stopRecording : startRecording}
         recording={recording}

@@ -582,8 +582,12 @@
   --border-color: #e9ecef;
   --shadow-color: rgba(0, 0, 0, 0.1);
   --error-color: #e74c3c;
+  --error-hover: #c0392b;
   --success-color: #27ae60;
   --warning-color: #f39c12;
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+  --disabled-color: #95a5a6;
 }
 
 .dark-mode {
@@ -594,8 +598,12 @@
   --border-color: #404040;
   --shadow-color: rgba(0, 0, 0, 0.3);
   --error-color: #ff6b6b;
+  --error-hover: #ff5252;
   --success-color: #51cf66;
   --warning-color: #ffd43b;
+  --accent-color: #4a9eff;
+  --accent-hover: #357abd;
+  --disabled-color: #666666;
 }
 
 /* Apply theme to body */
@@ -912,4 +920,342 @@ header h1 {
 
 .dark-mode .prediction__status.error {
   background-color: color-mix(in srgb, var(--error-color) 15%, var(--bg-primary));
+}
+
+.wake-word-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
+  margin: 1rem 0;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+.wake-word-container .mic-icon {
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 15px;
+  background: #ddd;
+  border-radius: 50%;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.wake-word-container .mic-icon.listening {
+  background: #4caf50;
+  animation: pulse 1.5s infinite;
+}
+
+.wake-word-container .controls {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 15px;
+}
+
+.wake-word-container .controls button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #4a9eff;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.wake-word-container .controls button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.wake-word-container .error {
+  color: #ff4444;
+  margin-bottom: 10px;
+}
+
+.wake-word-container .loader {
+  color: #666;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+  }
+  70% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
+
+.wake-word-container .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wake-word-container .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #4a9eff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.wake-word-container .error-message {
+  background-color: #fff3f3;
+  border: 1px solid #ffcdd2;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.wake-word-container .error-message p {
+  color: #d32f2f;
+  margin-bottom: 0.5rem;
+}
+
+.wake-word-container .retry-button {
+  background-color: #4a9eff;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.wake-word-container .retry-button:hover {
+  background-color: #357abd;
+}
+
+.wake-word-container .error-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.wake-word-container .debug-button {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.wake-word-container .debug-button:hover {
+  background-color: #5a6268;
+}
+
+.wake-word-container .debug-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.wake-word-container .debug-info p {
+  color: #495057;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.wake-word-container .debug-info ul {
+  list-style-type: none;
+  padding-left: 1rem;
+}
+
+.wake-word-container .debug-info li {
+  color: #6c757d;
+  margin-bottom: 0.25rem;
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.wake-word-container .debug-info li::before {
+  content: '•';
+  position: absolute;
+  left: 0.5rem;
+  color: #4a9eff;
+}
+
+/* Wake Word Listener Styles */
+.wake-word-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
+  margin: 1rem 0;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+.wake-word-spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--text-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.wake-word-text {
+  margin-left: 0.5rem;
+  color: var(--text-primary);
+}
+
+.wake-word-button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.wake-word-button:hover {
+  background-color: var(--accent-hover);
+}
+
+.wake-word-button--listening {
+  background-color: var(--error-color);
+}
+
+.wake-word-button--listening:hover {
+  background-color: var(--error-hover);
+}
+
+.wake-word-button--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: var(--disabled-color);
+}
+
+.wake-word-status {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.wake-word-status-listening {
+  display: flex;
+  align-items: center;
+}
+
+.wake-word-indicator {
+  width: 0.5rem;
+  height: 0.5rem;
+  background-color: var(--error-color);
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.wake-word-debug-toggle {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  transition: all 0.2s ease;
+}
+
+.wake-word-debug-toggle:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+}
+
+.wake-word-debug-info {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  padding: 0.5rem;
+  background-color: var(--bg-primary);
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-color);
+}
+
+.wake-word-error {
+  padding: 1rem;
+  background-color: color-mix(in srgb, var(--error-color) 10%, var(--bg-primary));
+  border: 1px solid var(--error-color);
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+.wake-word-error-message {
+  color: var(--error-color);
+  font-weight: 500;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Dark mode styles */
+.dark-mode .wake-word-text,
+.dark-mode .wake-word-status,
+.dark-mode .wake-word-debug-info {
+  color: #e5e7eb;
+}
+
+.dark-mode .wake-word-debug-toggle {
+  color: #9ca3af;
+}
+
+.dark-mode .wake-word-debug-toggle:hover {
+  color: #d1d5db;
+  background-color: #374151;
+}
+
+.dark-mode .wake-word-debug-info {
+  background-color: #1f2937;
+}
+
+.dark-mode .wake-word-error {
+  background-color: #7f1d1d;
+  border-color: #991b1b;
+}
+
+.dark-mode .wake-word-error-message {
+  color: #fecaca;
+}
+
+/* Remove cooldown message styles */
+.wake-word-cooldown {
+  display: none;
 }

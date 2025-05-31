@@ -48,7 +48,7 @@ def send_command_to_esp32(command: str):
     try:
         url = f"http://{ESP32_IP}/command"
         payload = {"cmd": command}
-        res = requests.post(url, json=payload, timeout=3)
+        res = requests.post(url, json=payload, timeout=1.5)
         res.raise_for_status()  # Raise exception for bad status codes
         logger.info(f"✅ Successfully sent command '{command}' to ESP32.")
         return True
