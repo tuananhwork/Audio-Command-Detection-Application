@@ -13,6 +13,106 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class AudioPreprocessor:
+    def __init__(self):
+        self.vad = webrtcvad.Vad(2)
+        self.target_sr = 16000
+        self.frame_duration_ms = 30
+        
+    def load_audio(self, input_path):
+        """Load and convert audio to mono 16kHz"""
+        audio = AudioSegment.from_wav(input_path).set_channels(1).set_frame_rate(self.target_sr)
+        raw_audio = np.array(audio.get_array_of_samples())
+        rate = audio.frame_rate
+        return raw_audio, rate
+        
+    def denoise(self, audio, sr):
+        """Apply noise reduction"""
+        denoised = nr.reduce_noise(y=audio.astype(np.float32), sr=sr)
+        if sr != self.target_sr:
+            denoised = librosa.resample(denoised, orig_sr=sr, target_sr=self.target_sr)
+        return denoised, self.target_sr
+        
+    def apply_vad(self, audio, sr):
+        """Apply Voice Activity Detection"""
+        frame_length = int(sr * self.frame_duration_ms / 1000)
+        frames = [audio[i:i+frame_length] for i in range(0, len(audio) - frame_length, frame_length)]
+
+        def is_speech(frame):
+            int16_frame = (frame * 32768).astype(np.int16)
+            return self.vad.is_speech(int16_frame.tobytes(), sr)
+
+        flags = [is_speech(frame) for frame in frames]
+        speech_mask = np.repeat(flags, frame_length)
+        speech_mask = np.pad(speech_mask, (0, len(audio) - len(speech_mask)), mode='constant')
+        return audio * speech_mask
+        
+    def extract_high_energy_segment(self, audio, sr, window_sec=1.5, stride_ratio=0.2):
+        """Extract segment with highest energy"""
+        window_len = int(window_sec * sr)
+        stride = int(stride_ratio * sr)
+
+        max_energy = 0
+        best_segment = None
+        for i in range(0, len(audio) - window_len, stride):
+            window = audio[i:i+window_len]
+            energy = np.sum(window.astype(np.float32)**2)
+            if energy > max_energy:
+                max_energy = energy
+                best_segment = window
+                
+        return best_segment
+        
+    def extract_one_second(self, audio, sr):
+        """Extract 1 second with highest energy"""
+        segment_len = int(1.0 * sr)
+        stride = int(0.02 * sr)
+
+        max_energy = 0
+        best_start = 0
+        for i in range(0, len(audio) - segment_len + 1, stride):
+            window = audio[i:i + segment_len]
+            energy = np.sum(window.astype(np.float32) ** 2)
+            if energy > max_energy:
+                max_energy = energy
+                best_start = i
+
+        return audio[best_start:best_start + segment_len]
+        
+    def normalize_audio(self, audio):
+        """Apply peak normalization"""
+        max_val = np.max(np.abs(audio))
+        if max_val > 0:
+            audio = audio / max_val * 0.99
+        return (audio * 32767).astype(np.int16)
+        
+    def process_audio_file(self, input_path, output_path=None):
+        """Main processing pipeline"""
+        # Load audio
+        raw_audio, rate = self.load_audio(input_path)
+        
+        # Denoise
+        denoised_audio, rate = self.denoise(raw_audio, rate)
+        
+        # VAD
+        speech_audio = self.apply_vad(denoised_audio, rate)
+        
+        # Extract high energy segment
+        best_segment = self.extract_high_energy_segment(speech_audio, rate)
+        
+        # Get 1 second segment
+        one_sec_segment = self.extract_one_second(best_segment, rate)
+        
+        # Normalize
+        final_output = self.normalize_audio(one_sec_segment)
+        
+        # Save if output path is provided
+        if output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            wavfile.write(output_path, rate, final_output)
+        
+        return final_output, rate
+
 class AudioCommandDetector:
     def __init__(self):
         # Load the model
@@ -29,8 +129,8 @@ class AudioCommandDetector:
                         'tat_den', 'tat_dieu_hoa', 'tat_quat', 'tat_tv', 
                         'unknown']
         
-        # Khởi tạo VAD
-        self.vad = webrtcvad.Vad(2)
+        # Khởi tạo AudioPreprocessor
+        self.audio_processor = AudioPreprocessor()
 
     def _init_model(self):
         """Khởi tạo model ConvMixer"""
@@ -64,76 +164,8 @@ class AudioCommandDetector:
         return ConvMixer(dim=256, depth=8, n_classes=13)
 
     def preprocess_audio(self, input_path, output_path=None):
-        """Tiền xử lý âm thanh"""
-        # Đọc và chuyển sang mono, 16kHz
-        audio = AudioSegment.from_wav(input_path).set_channels(1).set_frame_rate(16000)
-        raw_audio = np.array(audio.get_array_of_samples())
-        rate = audio.frame_rate
-
-        # Lọc nhiễu
-        denoised_audio = nr.reduce_noise(y=raw_audio.astype(np.float32), sr=rate)
-
-        # Resample nếu cần
-        if rate != 16000:
-            raw_audio = librosa.resample(raw_audio.astype(np.float32), orig_sr=rate, target_sr=16000)
-            denoised_audio = librosa.resample(denoised_audio.astype(np.float32), orig_sr=rate, target_sr=16000)
-            rate = 16000
-
-        # VAD
-        frame_duration_ms = 30
-        frame_length = int(rate * frame_duration_ms / 1000)
-        frames = [denoised_audio[i:i+frame_length] for i in range(0, len(denoised_audio) - frame_length, frame_length)]
-
-        def is_speech(frame):
-            int16_frame = (frame * 32768).astype(np.int16)
-            return self.vad.is_speech(int16_frame.tobytes(), rate)
-
-        flags = [is_speech(frame) for frame in frames]
-        speech_mask = np.repeat(flags, frame_length)
-        speech_mask = np.pad(speech_mask, (0, len(denoised_audio) - len(speech_mask)), mode='constant')
-        speech_audio = denoised_audio * speech_mask
-
-        # Chọn đoạn 1.5s có năng lượng cao
-        window_sec = 1.5
-        window_len = int(window_sec * rate)
-        stride = int(0.2 * rate)
-
-        max_energy = 0
-        best_segment = None
-        for i in range(0, len(speech_audio) - window_len, stride):
-            window = speech_audio[i:i+window_len]
-            energy = np.sum(window.astype(np.float32)**2)
-            if energy > max_energy:
-                max_energy = energy
-                best_segment = window
-
-        final_segment = best_segment
-        segment_len = int(1.0 * rate)
-        stride = int(0.02 * rate)
-
-        max_energy = 0
-        best_start = 0
-        for i in range(0, len(final_segment) - segment_len + 1, stride):
-            window = final_segment[i:i + segment_len]
-            energy = np.sum(window.astype(np.float32) ** 2)
-            if energy > max_energy:
-                max_energy = energy
-                best_start = i
-
-        padded_segment = final_segment[best_start:best_start + segment_len]
-
-        # Chuẩn hóa âm lượng
-        max_val = np.max(np.abs(padded_segment))
-        if max_val > 0:
-            padded_segment = padded_segment / max_val * 0.99
-
-        final_output = (padded_segment * 32767).astype(np.int16)
-
-        if output_path:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            wavfile.write(output_path, rate, final_output)
-
-        return final_output, rate
+        """Tiền xử lý âm thanh sử dụng AudioPreprocessor"""
+        return self.audio_processor.process_audio_file(input_path, output_path)
 
     def extract_mel_spectrogram(self, audio_data, sr=16000, n_mels=128, n_fft=2048, hop_length=128):
         mel_spec = librosa.feature.melspectrogram(
