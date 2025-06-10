@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Header from './components/Header';
 import ControlPanel from './components/ControlPanel';
 import Results from './components/Results';
 import { AUDIO_CONFIG } from './constants/audio';
 import { createAudioContext, convertToWav } from './utils/audio';
+import { getErrorMessage } from './utils/helpers';
 import './App.css';
 
 function App() {
@@ -20,35 +21,68 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const mediaRecorderRef = React.useRef(null);
 
-  // Toggle dark mode
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-    document.body.classList.toggle('dark-mode');
-  };
-
-  // Keyboard event listener
-  useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (e.code === 'Space' && !recording && !loading) {
-        e.preventDefault();
-        startRecording();
+  const handleUpload = useCallback(
+    async (blob = audioState.blob) => {
+      if (!blob) return;
+      setLoading(true);
+      setResult(null);
+      const formData = new FormData();
+      formData.append('audio_file', blob, 'audio.wav');
+      try {
+        const res = await axios.post('http://localhost:8000/predict', formData, {
+          timeout: AUDIO_CONFIG.API_TIMEOUT,
+        });
+        console.log('✅ Received result from server:', res.data);
+        setResult(res.data);
+      } catch (err) {
+        console.error('❌ Error processing audio:', err);
+        const errorMessage = getErrorMessage(err);
+        setResult({
+          status: 'error',
+          message: errorMessage,
+          data: {
+            predicted_class: 'error',
+            confidence: 0,
+            top3_predictions: [],
+            command_status: 'error',
+            command_error: errorMessage,
+          },
+        });
       }
-    };
+      setLoading(false);
+    },
+    [audioState.blob]
+  );
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [recording, loading]);
+  const stopRecording = useCallback(() => {
+    if (!mediaRecorderRef.current) return;
 
-  // Hide keyboard hint after 5 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowKeyboardHint(false);
-    }, 5000);
+    setRecording(false);
+    const { stream, source, workletNode, chunks } = mediaRecorderRef.current;
 
-    return () => clearTimeout(timer);
-  }, []);
+    source.disconnect();
+    workletNode.disconnect();
+    stream.getTracks().forEach((track) => track.stop());
 
-  const startRecording = async () => {
+    const audioData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+      audioData.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    const wavBlob = convertToWav(audioData);
+    setAudioState({
+      url: URL.createObjectURL(wavBlob),
+      blob: wavBlob,
+    });
+
+    handleUpload(wavBlob);
+
+    mediaRecorderRef.current = null;
+  }, [handleUpload]);
+
+  const startRecording = useCallback(async () => {
     setResult(null);
     setAudioState({ url: null, blob: null });
     setRecording(true);
@@ -120,87 +154,35 @@ function App() {
         },
       });
     }
+  }, [stopRecording]);
+
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode);
+    document.body.classList.toggle('dark-mode');
   };
 
-  const stopRecording = () => {
-    if (!mediaRecorderRef.current) return;
-
-    setRecording(false);
-    const { stream, source, workletNode, chunks } = mediaRecorderRef.current;
-
-    source.disconnect();
-    workletNode.disconnect();
-    stream.getTracks().forEach((track) => track.stop());
-
-    const audioData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
-    let offset = 0;
-    for (const chunk of chunks) {
-      audioData.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    const wavBlob = convertToWav(audioData);
-    setAudioState({
-      url: URL.createObjectURL(wavBlob),
-      blob: wavBlob,
-    });
-
-    handleUpload(wavBlob);
-
-    mediaRecorderRef.current = null;
-  };
-
-  const handleUpload = async (blob = audioState.blob) => {
-    if (!blob) return;
-    setLoading(true);
-    setResult(null);
-    const formData = new FormData();
-    formData.append('audio_file', blob, 'audio.wav');
-    try {
-      const res = await axios.post('http://localhost:8000/predict', formData, {
-        timeout: AUDIO_CONFIG.API_TIMEOUT,
-      });
-      console.log('✅ Received result from server:', res.data);
-      setResult(res.data);
-    } catch (err) {
-      console.error('❌ Error processing audio:', err);
-      let errorMessage = 'An error occurred while processing audio';
-
-      if (err.code === 'ERR_NETWORK') {
-        errorMessage = 'Cannot connect to server. Please check your connection or try again later.';
-      } else if (err.response) {
-        if (err.response.data?.command_error) {
-          if (
-            err.response.data.command_error.includes('Connection to') &&
-            err.response.data.command_error.includes('timed out')
-          ) {
-            errorMessage =
-              'Cannot connect to device. Please check:\n' +
-              '1. Is the device powered on?\n' +
-              '2. Is the device IP address correct?\n' +
-              '3. Is there network connectivity between computer and device?';
-          } else {
-            errorMessage = err.response.data.command_error;
-          }
-        } else {
-          errorMessage = err.response.data?.detail || err.response.data?.message || err.message;
-        }
+  // Keyboard event listener
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.code === 'Space' && !recording && !loading) {
+        e.preventDefault();
+        startRecording();
       }
+    };
 
-      setResult({
-        status: 'error',
-        message: errorMessage,
-        data: {
-          predicted_class: 'error',
-          confidence: 0,
-          top3_predictions: [],
-          command_status: 'error',
-          command_error: errorMessage,
-        },
-      });
-    }
-    setLoading(false);
-  };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [recording, loading, startRecording]);
+
+  // Hide keyboard hint after 5 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowKeyboardHint(false);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className={`app ${isDarkMode ? 'dark-mode' : ''}`}>
