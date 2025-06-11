@@ -1,12 +1,19 @@
 import React from 'react';
-import PropTypes from 'prop-types';
+import Loader from './Loader';
 import { COMMAND_MAPPING, COMMAND_STATUS } from '../constants/commands';
 import { getPredictionClass, getCommandStatusText } from '../utils/helpers';
 
 const Results = ({ result, loading }) => {
   return (
     <div className="results animate-in">
-      {result && (
+      {loading && (
+        <div className="loading-container animate-in">
+          <Loader />
+          <p>Processing...</p>
+        </div>
+      )}
+
+      {result && !loading && (
         <>
           <div className="results__section">
             <h2 className="results__title">Predicted Command</h2>
@@ -51,13 +58,6 @@ const Results = ({ result, loading }) => {
         </>
       )}
 
-      {loading && (
-        <div className="loading-container animate-in">
-          <div className="loading-spinner"></div>
-          <p>Processing...</p>
-        </div>
-      )}
-
       <div className="results__section">
         <h2 className="results__title">Supported Commands</h2>
         <div className="command-list">
@@ -73,20 +73,6 @@ const Results = ({ result, loading }) => {
       </div>
     </div>
   );
-};
-
-Results.propTypes = {
-  result: PropTypes.shape({
-    data: PropTypes.shape({
-      predicted_class: PropTypes.string,
-      confidence: PropTypes.number,
-      command_status: PropTypes.string,
-      command_error: PropTypes.string,
-      command_reason: PropTypes.string,
-      top3_predictions: PropTypes.arrayOf(PropTypes.array),
-    }),
-  }),
-  loading: PropTypes.bool.isRequired,
 };
 
 export default Results;

@@ -1,97 +1,51 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect } from 'react';
+import { useWakewordDetection } from '../hooks/useWakewordDetection';
+import ListeningLoader from './ListeningLoader';
 
-// Use local model files instead of remote URLs
 const MODEL_URL = window.location.origin + '/models/wakeword/';
 
 export default function WakewordListener({ onWakewordDetected, isRecording, isProcessing }) {
-  const recognizerRef = useRef(null);
-  const [isListening, setIsListening] = useState(false);
-  const [isModelLoaded, setIsModelLoaded] = useState(false);
+  const { isModelLoaded, isListening, startListening, stopListening, resetRecordingState } =
+    useWakewordDetection(onWakewordDetected);
 
-  const startListening = async () => {
-    if (!recognizerRef.current || isListening || !isModelLoaded) return;
-
-    try {
-      await recognizerRef.current.listen(
-        (result) => {
-          const scores = result.scores;
-          const labels = recognizerRef.current.wordLabels();
-          const maxScore = Math.max(...scores);
-          const maxIndex = scores.indexOf(maxScore);
-          const predictedLabel = labels[maxIndex];
-
-          console.log(`Detected: ${predictedLabel} (${maxScore})`);
-
-          if (predictedLabel === 'Hey home' && maxScore > 0.9) {
-            // Stop listening immediately when wake word is detected
-            stopListening();
-            onWakewordDetected();
-          }
-        },
-        {
-          probabilityThreshold: 0.75,
-          overlapFactor: 0.5,
-          invokeCallbackOnNoiseAndUnknown: false,
-        }
-      );
-      setIsListening(true);
-    } catch (error) {
-      console.error('Error starting wake word detection:', error);
-    }
-  };
-
-  const stopListening = async () => {
-    const recognizer = recognizerRef.current;
-    if (!recognizer || !recognizer.isListening()) return;
-
-    try {
-      await recognizer.stopListening();
-      setIsListening(false);
-    } catch (error) {
-      console.error('Error stopping wake word detection:', error);
-    }
-  };
-
-  useEffect(() => {
-    async function loadModel() {
-      const speechCommands = window.speechCommands;
-      if (!speechCommands) {
-        console.error('speechCommands not loaded!');
-        return;
-      }
-
-      try {
-        const recognizer = speechCommands.create(
-          'BROWSER_FFT',
-          undefined,
-          MODEL_URL + 'model.json',
-          MODEL_URL + 'metadata.json'
-        );
-
-        await recognizer.ensureModelLoaded();
-        recognizerRef.current = recognizer;
-        setIsModelLoaded(true);
-        await startListening();
-      } catch (error) {
-        console.error('Error loading model:', error);
-      }
-    }
-
-    loadModel();
-
-    return () => {
-      stopListening();
-    };
-  }, [onWakewordDetected]);
-
-  // Handle recording and processing state changes
+  // Stop listening when recording or processing starts
   useEffect(() => {
     if (isRecording || isProcessing) {
       stopListening();
-    } else if (isModelLoaded && !isListening) {
-      startListening();
     }
-  }, [isRecording, isProcessing, isModelLoaded, isListening]);
+  }, [isRecording, isProcessing, stopListening]);
 
-  return <div>Listening for wakeword: "hey home"</div>;
+  // Start listening after recording and processing
+  useEffect(() => {
+    let timeoutId = null;
+
+    if (isModelLoaded && !isRecording && !isProcessing && !isListening) {
+      // Wait 1 second before starting to listen again
+      timeoutId = setTimeout(() => {
+        resetRecordingState();
+        startListening();
+      }, 1000);
+    }
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [isModelLoaded, isRecording, isProcessing, isListening, startListening, resetRecordingState]);
+
+  return (
+    <div className={`wakeword-status ${isRecording ? 'recording' : ''}`}>
+      {isRecording ? (
+        'Recording command...'
+      ) : isProcessing ? (
+        'Processing command...'
+      ) : (
+        <>
+          Listening: "Hey home"
+          <ListeningLoader />
+        </>
+      )}
+    </div>
+  );
 }

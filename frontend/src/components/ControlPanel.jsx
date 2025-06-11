@@ -1,20 +1,20 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import useWaveSurfer from '../hooks/useWaveSurfer';
+import RecordButton from './RecordButton';
 
 const ControlPanel = ({ onRecord, recording, countdown, loading, audioUrl, showKeyboardHint }) => {
   const originalWaveformRef = useWaveSurfer(audioUrl);
 
   return (
     <div className="control-panel">
-      <button
-        className={`btn btn--record ${loading ? 'disabled' : ''} ${recording ? 'recording' : ''}`}
-        onClick={onRecord}
-        disabled={loading || recording}
-      >
-        {recording ? `Recording... (${countdown}s)` : 'Record (3s)'}
-        {showKeyboardHint && !recording && <span className="keyboard-hint">Press Space to record</span>}
-      </button>
+      <RecordButton
+        onRecord={onRecord}
+        recording={recording}
+        countdown={countdown}
+        loading={loading}
+        showKeyboardHint={showKeyboardHint}
+      />
 
       {audioUrl && (
         <div className="audio-container animate-in">
