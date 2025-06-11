@@ -3,6 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import ControlPanel from './components/ControlPanel';
 import Results from './components/Results';
+import WakewordListener from './components/WakewordListener';
 import { AUDIO_CONFIG } from './constants/audio';
 import { createAudioContext, convertToWav } from './utils/audio';
 import { getErrorMessage } from './utils/helpers';
@@ -19,12 +20,14 @@ function App() {
   const [countdown, setCountdown] = useState(0);
   const [showKeyboardHint, setShowKeyboardHint] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const mediaRecorderRef = React.useRef(null);
 
   const handleUpload = useCallback(
     async (blob = audioState.blob) => {
       if (!blob) return;
       setLoading(true);
+      setIsProcessing(true);
       setResult(null);
       const formData = new FormData();
       formData.append('audio_file', blob, 'audio.wav');
@@ -50,6 +53,7 @@ function App() {
         });
       }
       setLoading(false);
+      setIsProcessing(false);
     },
     [audioState.blob]
   );
@@ -187,6 +191,9 @@ function App() {
   return (
     <div className={`app ${isDarkMode ? 'dark-mode' : ''}`}>
       <Header isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+      <div>
+        <WakewordListener onWakewordDetected={startRecording} isRecording={recording} isProcessing={isProcessing} />
+      </div>
       <ControlPanel
         onRecord={recording ? stopRecording : startRecording}
         recording={recording}
