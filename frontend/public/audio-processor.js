@@ -22,7 +22,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
 
         // If buffer is full, send it to main thread
         if (this._bytesWritten >= this._bufferSize) {
-          this.port.postMessage(this._buffer);
+          this.port.postMessage(this._buffer.slice(0, this._bytesWritten));
           this._initBuffer();
         }
       }

@@ -37,7 +37,10 @@ function App() {
     const formData = new FormData();
     formData.append('audio_file', blob, 'audio.wav');
     try {
-      const res = await axios.post('http://localhost:8000/predict', formData, {
+      // const res = await axios.post(`${import.meta.env.VITE_API_URL}/predict`, formData, {
+      //   timeout: AUDIO_CONFIG.API_TIMEOUT,
+      // });
+      const res = await axios.post(`http://localhost:8000/predict`, formData, {
         timeout: AUDIO_CONFIG.API_TIMEOUT,
       });
       console.log('✅ Command result:', res.data);
@@ -60,8 +63,53 @@ function App() {
     setIsProcessing(false);
   };
 
+  // const stopRecording = async () => {
+  //   if (!mediaRecorderRef.current) return;
+
+  //   // Clear countdown timer
+  //   if (countdownTimerRef.current) {
+  //     clearInterval(countdownTimerRef.current);
+  //     countdownTimerRef.current = null;
+  //   }
+
+  //   setRecording(false);
+  //   const { stream, source, workletNode, chunks } = mediaRecorderRef.current;
+
+  //   // Disconnect audio nodes
+  //   source.disconnect();
+  //   workletNode.disconnect();
+  //   stream.getTracks().forEach((track) => track.stop());
+
+  //   // Combine audio chunks
+  //   const audioData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+  //   let offset = 0;
+  //   for (const chunk of chunks) {
+  //     audioData.set(chunk, offset);
+  //     offset += chunk.length;
+  //   }
+
+  //   // Convert to WAV and update state
+  //   const wavBlob = convertToWav(audioData);
+  //   setAudioState({
+  //     url: URL.createObjectURL(wavBlob),
+  //     blob: wavBlob,
+  //   });
+
+  //   // Upload audio
+  //   await handleUpload(wavBlob);
+
+  //   // Cleanup
+  //   mediaRecorderRef.current = null;
+  //   startTimeRef.current = null;
+  // };
+  const hasStoppedRef = useRef(false);
+
   const stopRecording = async () => {
     if (!mediaRecorderRef.current) return;
+
+    // Ngăn gọi lại stop nhiều lần
+    if (hasStoppedRef.current) return;
+    hasStoppedRef.current = true;
 
     // Clear countdown timer
     if (countdownTimerRef.current) {
@@ -70,29 +118,43 @@ function App() {
     }
 
     setRecording(false);
+
     const { stream, source, workletNode, chunks } = mediaRecorderRef.current;
 
-    // Disconnect audio nodes
-    source.disconnect();
-    workletNode.disconnect();
+    // Ngắt kết nối các node
+    try {
+      source.disconnect();
+      workletNode.disconnect();
+      workletNode.port.onmessage = null;
+    } catch (err) {
+      console.warn('Error disconnecting nodes:', err);
+    }
+
+    // Dừng micro
     stream.getTracks().forEach((track) => track.stop());
 
-    // Combine audio chunks
-    const audioData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+    // Nối các chunk lại
+    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const audioData = new Float32Array(totalLength);
     let offset = 0;
     for (const chunk of chunks) {
       audioData.set(chunk, offset);
       offset += chunk.length;
     }
 
-    // Convert to WAV and update state
-    const wavBlob = convertToWav(audioData);
+    // Convert to WAV
+    const wavBlob = convertToWav(audioData, {
+      sampleRate: AUDIO_CONFIG.SAMPLE_RATE,
+      numChannels: AUDIO_CONFIG.CHANNEL_COUNT,
+    });
+
+    // Cập nhật state
     setAudioState({
       url: URL.createObjectURL(wavBlob),
       blob: wavBlob,
     });
 
-    // Upload audio
+    // Upload
     await handleUpload(wavBlob);
 
     // Cleanup
@@ -100,15 +162,98 @@ function App() {
     startTimeRef.current = null;
   };
 
+  // const startRecording = useCallback(async () => {
+  //   // Reset states
+  //   setResult(null);
+  //   setAudioState({ url: null, blob: null });
+  //   setRecording(true);
+  //   setCountdown(AUDIO_CONFIG.RECORDING_DURATION);
+
+  //   try {
+  //     // Get audio stream
+  //     const stream = await navigator.mediaDevices.getUserMedia({
+  //       audio: {
+  //         channelCount: AUDIO_CONFIG.CHANNEL_COUNT,
+  //         sampleRate: AUDIO_CONFIG.SAMPLE_RATE,
+  //         sampleSize: AUDIO_CONFIG.SAMPLE_SIZE,
+  //       },
+  //     });
+
+  //     // Setup audio context and nodes
+  //     const audioContext = createAudioContext();
+  //     const source = audioContext.createMediaStreamSource(stream);
+  //     await audioContext.audioWorklet.addModule('audio-processor.js');
+  //     const workletNode = new AudioWorkletNode(audioContext, 'audio-recorder');
+
+  //     // Initialize recording
+  //     const chunks = [];
+  //     const totalSamples = AUDIO_CONFIG.SAMPLE_RATE * AUDIO_CONFIG.RECORDING_DURATION;
+  //     let recordedSamples = 0;
+
+  //     // Handle audio data
+  //     workletNode.port.onmessage = (e) => {
+  //       if (recordedSamples < totalSamples) {
+  //         const inputData = e.data;
+  //         const samplesToRecord = Math.min(inputData.length, totalSamples - recordedSamples);
+  //         chunks.push(inputData.slice(0, samplesToRecord));
+  //         recordedSamples += samplesToRecord;
+
+  //         if (recordedSamples >= totalSamples) {
+  //           stopRecording();
+  //         }
+  //       }
+  //     };
+
+  //     // Connect audio nodes
+  //     source.connect(workletNode);
+  //     workletNode.connect(audioContext.destination);
+
+  //     // Store references
+  //     mediaRecorderRef.current = {
+  //       stream,
+  //       source,
+  //       workletNode,
+  //       chunks,
+  //     };
+
+  //     // Start countdown timer
+  //     startTimeRef.current = Date.now();
+  //     countdownTimerRef.current = setInterval(() => {
+  //       const elapsedTime = Math.floor((Date.now() - startTimeRef.current) / 1000);
+  //       const remainingTime = Math.max(0, AUDIO_CONFIG.RECORDING_DURATION - elapsedTime);
+  //       setCountdown(remainingTime);
+
+  //       if (remainingTime === 0) {
+  //         stopRecording();
+  //       }
+  //     }, 100); // Update every 100ms for smoother countdown
+  //   } catch (err) {
+  //     console.error('❌ Microphone error:', err);
+  //     setRecording(false);
+  //     setResult({
+  //       status: 'error',
+  //       message: 'Cannot access microphone',
+  //       data: {
+  //         predicted_class: 'error',
+  //         confidence: 0,
+  //         top3_predictions: [],
+  //         command_status: 'error',
+  //         command_error: 'Cannot access microphone',
+  //       },
+  //     });
+  //   }
+  // }, []);
+
+  // Toggle dark mode
   const startRecording = useCallback(async () => {
-    // Reset states
+    // Reset
     setResult(null);
     setAudioState({ url: null, blob: null });
     setRecording(true);
     setCountdown(AUDIO_CONFIG.RECORDING_DURATION);
+    hasStoppedRef.current = false;
 
     try {
-      // Get audio stream
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: AUDIO_CONFIG.CHANNEL_COUNT,
@@ -117,36 +262,34 @@ function App() {
         },
       });
 
-      // Setup audio context and nodes
       const audioContext = createAudioContext();
       const source = audioContext.createMediaStreamSource(stream);
       await audioContext.audioWorklet.addModule('audio-processor.js');
       const workletNode = new AudioWorkletNode(audioContext, 'audio-recorder');
 
-      // Initialize recording
       const chunks = [];
       const totalSamples = AUDIO_CONFIG.SAMPLE_RATE * AUDIO_CONFIG.RECORDING_DURATION;
       let recordedSamples = 0;
 
-      // Handle audio data
+      // Gắn onmessage
       workletNode.port.onmessage = (e) => {
-        if (recordedSamples < totalSamples) {
-          const inputData = e.data;
-          const samplesToRecord = Math.min(inputData.length, totalSamples - recordedSamples);
-          chunks.push(inputData.slice(0, samplesToRecord));
-          recordedSamples += samplesToRecord;
+        if (hasStoppedRef.current) return;
 
-          if (recordedSamples >= totalSamples) {
-            stopRecording();
-          }
+        const inputData = e.data;
+        const samplesToRecord = Math.min(inputData.length, totalSamples - recordedSamples);
+        chunks.push(inputData.slice(0, samplesToRecord));
+        recordedSamples += samplesToRecord;
+
+        if (recordedSamples >= totalSamples && !hasStoppedRef.current) {
+          stopRecording();
         }
       };
 
-      // Connect audio nodes
+      // Kết nối các node (không nối ra loa)
       source.connect(workletNode);
-      workletNode.connect(audioContext.destination);
+      // workletNode.connect(audioContext.destination); // Comment để tránh echo
 
-      // Store references
+      // Lưu vào ref
       mediaRecorderRef.current = {
         stream,
         source,
@@ -154,20 +297,22 @@ function App() {
         chunks,
       };
 
-      // Start countdown timer
+      // Đếm ngược
       startTimeRef.current = Date.now();
       countdownTimerRef.current = setInterval(() => {
         const elapsedTime = Math.floor((Date.now() - startTimeRef.current) / 1000);
         const remainingTime = Math.max(0, AUDIO_CONFIG.RECORDING_DURATION - elapsedTime);
         setCountdown(remainingTime);
 
-        if (remainingTime === 0) {
+        if (remainingTime === 0 && !hasStoppedRef.current) {
           stopRecording();
         }
-      }, 100); // Update every 100ms for smoother countdown
+      }, 100);
     } catch (err) {
       console.error('❌ Microphone error:', err);
       setRecording(false);
+      hasStoppedRef.current = true;
+
       setResult({
         status: 'error',
         message: 'Cannot access microphone',
@@ -182,7 +327,6 @@ function App() {
     }
   }, []);
 
-  // Toggle dark mode
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
     setIsDarkMode(newMode);

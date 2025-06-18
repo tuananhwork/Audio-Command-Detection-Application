@@ -22,7 +22,7 @@ const ControlPanel = ({ onRecord, recording, countdown, loading, audioUrl, showK
             <h3 className="visualization-title">Original Audio</h3>
             <div ref={originalWaveformRef} className="waveform" />
           </div>
-          <audio src={audioUrl} controls className="audio-player" />
+          {/* <audio src={audioUrl} controls className="audio-player" /> */}
         </div>
       )}
     </div>
